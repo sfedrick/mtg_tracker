@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Plus, Minus, X, Users } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Plus, Minus, X, Users, Copy, Check } from 'lucide-react';
+import { io, Socket } from 'socket.io-client';
 
 interface Creature {
   id: number;
@@ -17,6 +18,15 @@ interface Player {
   creatures: Creature[];
 }
 
+interface GameState {
+  players: Player[];
+  numPlayers: number;
+}
+
+// In dev, set VITE_SERVER_URL=http://localhost:3001 in .env.local.
+// In production (combined deploy) leave it unset — io() connects to same origin.
+const SERVER_URL = import.meta.env.VITE_SERVER_URL as string | undefined;
+
 const PLAYER_COLORS = [
   { bg: '#1e3a5f', border: '#3b82f6' },
   { bg: '#5f1e1e', border: '#ef4444' },
@@ -25,236 +35,319 @@ const PLAYER_COLORS = [
 ];
 
 const styles = {
-  app: { 
-    minHeight: '100vh', 
-    backgroundColor: '#111827', 
-    padding: '16px', 
-    fontFamily: 'sans-serif' 
+  app: {
+    minHeight: '100vh',
+    backgroundColor: '#111827',
+    padding: '16px',
+    fontFamily: 'sans-serif',
   },
-  center: { 
-    minHeight: '100vh', 
-    backgroundColor: '#111827', 
-    display: 'flex', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    padding: '16px', 
-    fontFamily: 'sans-serif' 
+  center: {
+    minHeight: '100vh',
+    backgroundColor: '#111827',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '16px',
+    fontFamily: 'sans-serif',
   },
-  card: { 
-    backgroundColor: '#1f2937', 
-    borderRadius: '8px', 
-    padding: '32px', 
-    maxWidth: '400px', 
-    width: '100%', 
-    border: '2px solid #374151' 
+  card: {
+    backgroundColor: '#1f2937',
+    borderRadius: '8px',
+    padding: '32px',
+    maxWidth: '400px',
+    width: '100%',
+    border: '2px solid #374151',
   },
-  title: { 
-    display: 'flex', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    marginBottom: '24px' 
+  title: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: '24px',
   },
-  titleText: { 
-    fontSize: '28px', 
-    fontWeight: 'bold', 
-    color: '#fff', 
-    margin: 0 
+  titleText: {
+    fontSize: '28px',
+    fontWeight: 'bold',
+    color: '#fff',
+    margin: 0,
   },
-  label: { 
-    color: '#d1d5db', 
-    marginBottom: '8px', 
-    fontWeight: '600', 
-    display: 'block' 
+  label: {
+    color: '#d1d5db',
+    marginBottom: '8px',
+    fontWeight: '600',
+    display: 'block',
   },
-  playerBtns: { 
-    display: 'flex', 
-    gap: '8px' 
+  playerBtns: {
+    display: 'flex',
+    gap: '8px',
   },
-  startBtn: { 
-    width: '100%', 
-    backgroundColor: '#16a34a', 
-    color: '#fff', 
-    fontWeight: 'bold', 
-    padding: '12px', 
-    borderRadius: '6px', 
-    border: 'none', 
-    cursor: 'pointer', 
-    fontSize: '16px', 
-    marginTop: '16px' 
+  startBtn: {
+    width: '100%',
+    backgroundColor: '#16a34a',
+    color: '#fff',
+    fontWeight: 'bold',
+    padding: '12px',
+    borderRadius: '6px',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '16px',
+    marginTop: '16px',
   },
-  header: { 
-    display: 'flex', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginBottom: '24px' 
+  backBtn: {
+    width: '100%',
+    backgroundColor: '#374151',
+    color: '#d1d5db',
+    padding: '10px',
+    borderRadius: '6px',
+    border: 'none',
+    cursor: 'pointer',
+    fontWeight: '600',
+    fontSize: '14px',
+    marginTop: '8px',
   },
-  headerTitle: { 
-    fontSize: '28px', 
-    fontWeight: 'bold', 
-    color: '#fff', 
-    margin: 0 
+  header: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '24px',
   },
-  newGameBtn: { 
-    backgroundColor: '#dc2626', 
-    color: '#fff', 
-    padding: '8px 16px', 
-    borderRadius: '6px', 
-    border: 'none', 
-    cursor: 'pointer', 
-    fontWeight: '600', 
-    fontSize: '14px' 
+  headerTitle: {
+    fontSize: '28px',
+    fontWeight: 'bold',
+    color: '#fff',
+    margin: 0,
   },
-  playerName: { 
-    fontSize: '18px', 
-    fontWeight: 'bold', 
-    color: '#fff', 
-    marginBottom: '12px' 
+  headerActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
   },
-  lifeBox: { 
-    backgroundColor: '#111827', 
-    borderRadius: '8px', 
-    padding: '16px', 
-    display: 'flex', 
-    alignItems: 'center', 
-    justifyContent: 'space-between', 
-    marginBottom: '16px' 
+  newGameBtn: {
+    backgroundColor: '#dc2626',
+    color: '#fff',
+    padding: '8px 16px',
+    borderRadius: '6px',
+    border: 'none',
+    cursor: 'pointer',
+    fontWeight: '600',
+    fontSize: '14px',
   },
-  lifeNum: { 
-    fontSize: '48px', 
-    fontWeight: 'bold', 
-    color: '#fff', 
+  playerName: {
+    fontSize: '18px',
+    fontWeight: 'bold',
+    color: '#fff',
+    marginBottom: '12px',
+  },
+  lifeBox: {
+    backgroundColor: '#111827',
+    borderRadius: '8px',
+    padding: '16px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '16px',
+  },
+  lifeNum: {
+    fontSize: '48px',
+    fontWeight: 'bold',
+    color: '#fff',
     textAlign: 'center' as const,
-    flex: 1 
+    flex: 1,
   },
-  lifeLabel: { 
-    fontSize: '12px', 
-    color: '#9ca3af', 
-    textAlign: 'center' as const
+  lifeLabel: {
+    fontSize: '12px',
+    color: '#9ca3af',
+    textAlign: 'center' as const,
   },
-  sectionHeader: { 
-    display: 'flex', 
-    justifyContent: 'space-between', 
-    alignItems: 'center', 
-    marginBottom: '8px' 
+  sectionHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '8px',
   },
-  sectionTitle: { 
-    color: '#fff', 
-    fontWeight: '600', 
-    margin: 0 
+  sectionTitle: {
+    color: '#fff',
+    fontWeight: '600',
+    margin: 0,
   },
-  creatureList: { 
-    display: 'flex', 
-    flexDirection: 'column' as const, 
-    gap: '8px', 
-    maxHeight: '384px', 
-    overflowY: 'auto' as const
+  creatureList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '8px',
+    maxHeight: '384px',
+    overflowY: 'auto' as const,
   },
-  creatureCard: { 
-    backgroundColor: '#1f2937', 
-    borderRadius: '6px', 
-    padding: '12px', 
-    border: '1px solid #374151' 
+  creatureCard: {
+    backgroundColor: '#1f2937',
+    borderRadius: '6px',
+    padding: '12px',
+    border: '1px solid #374151',
   },
-  creatureHeader: { 
-    display: 'flex', 
-    justifyContent: 'space-between', 
-    alignItems: 'flex-start', 
-    marginBottom: '8px' 
+  creatureHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '8px',
   },
-  creatureName: { 
-    color: '#fff', 
-    fontWeight: '600', 
-    fontSize: '14px', 
-    margin: 0 
+  creatureName: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: '14px',
+    margin: 0,
   },
-  statRow: { 
-    display: 'flex', 
-    gap: '16px' 
+  statRow: {
+    display: 'flex',
+    gap: '16px',
   },
-  stat: { 
-    flex: 1 
+  stat: {
+    flex: 1,
   },
-  statLabel: { 
-    fontSize: '11px', 
-    color: '#9ca3af', 
-    marginBottom: '4px' 
+  statLabel: {
+    fontSize: '11px',
+    color: '#9ca3af',
+    marginBottom: '4px',
   },
-  statControl: { 
-    display: 'flex', 
-    alignItems: 'center', 
-    gap: '4px' 
+  statControl: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '4px',
   },
-  statNum: { 
-    color: '#fff', 
-    fontWeight: 'bold', 
-    fontSize: '20px', 
-    flex: 1, 
-    textAlign: 'center' as const
+  statNum: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: '20px',
+    flex: 1,
+    textAlign: 'center' as const,
   },
-  formBox: { 
-    backgroundColor: '#374151', 
-    borderRadius: '6px', 
-    padding: '12px', 
-    border: '2px solid #22c55e', 
-    display: 'flex', 
-    flexDirection: 'column' as const, 
-    gap: '8px' 
+  formBox: {
+    backgroundColor: '#374151',
+    borderRadius: '6px',
+    padding: '12px',
+    border: '2px solid #22c55e',
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '8px',
   },
-  input: { 
-    width: '100%', 
-    backgroundColor: '#1f2937', 
-    color: '#fff', 
-    padding: '8px 12px', 
-    borderRadius: '6px', 
-    border: '1px solid #4b5563', 
-    fontSize: '14px', 
-    boxSizing: 'border-box' as const
+  input: {
+    width: '100%',
+    backgroundColor: '#1f2937',
+    color: '#fff',
+    padding: '8px 12px',
+    borderRadius: '6px',
+    border: '1px solid #4b5563',
+    fontSize: '14px',
+    boxSizing: 'border-box' as const,
   },
-  formBtns: { 
-    display: 'flex', 
-    gap: '8px' 
+  formBtns: {
+    display: 'flex',
+    gap: '8px',
   },
-  addBtn: { 
-    flex: 1, 
-    backgroundColor: '#16a34a', 
-    color: '#fff', 
-    padding: '8px', 
-    borderRadius: '6px', 
-    border: 'none', 
-    cursor: 'pointer', 
-    fontWeight: '600' 
+  addBtn: {
+    flex: 1,
+    backgroundColor: '#16a34a',
+    color: '#fff',
+    padding: '8px',
+    borderRadius: '6px',
+    border: 'none',
+    cursor: 'pointer',
+    fontWeight: '600',
   },
-  cancelBtn: { 
-    flex: 1, 
-    backgroundColor: '#4b5563', 
-    color: '#fff', 
-    padding: '8px', 
-    borderRadius: '6px', 
-    border: 'none', 
-    cursor: 'pointer', 
-    fontWeight: '600' 
+  cancelBtn: {
+    flex: 1,
+    backgroundColor: '#4b5563',
+    color: '#fff',
+    padding: '8px',
+    borderRadius: '6px',
+    border: 'none',
+    cursor: 'pointer',
+    fontWeight: '600',
   },
   iconContainer: {
-    marginRight: '12px'
+    marginRight: '12px',
   },
   removeBtn: {
     background: 'none',
     border: 'none',
     cursor: 'pointer',
-    padding: '2px'
+    padding: '2px',
   },
   gridContainer: {
     maxWidth: '1280px',
-    margin: '0 auto'
+    margin: '0 auto',
   },
   inputFlex: {
-    flex: 1
+    flex: 1,
   },
   lifeCenterDiv: {
     display: 'flex',
     flexDirection: 'column' as const,
-    alignItems: 'center'
-  }
+    alignItems: 'center',
+  },
+  // Room UI styles
+  homeBtn: {
+    width: '100%',
+    padding: '14px',
+    borderRadius: '8px',
+    fontWeight: 'bold',
+    fontSize: '16px',
+    cursor: 'pointer',
+    border: 'none',
+    marginBottom: '10px',
+  },
+  roomCodeBox: {
+    backgroundColor: '#111827',
+    borderRadius: '8px',
+    padding: '16px',
+    marginBottom: '20px',
+    textAlign: 'center' as const,
+  },
+  roomCodeLabel: {
+    fontSize: '11px',
+    color: '#9ca3af',
+    marginBottom: '6px',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase' as const,
+  },
+  roomCodeText: {
+    fontSize: '36px',
+    fontWeight: 'bold',
+    color: '#60a5fa',
+    letterSpacing: '0.2em',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '10px',
+  },
+  copyBtn: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    padding: '4px',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  roomCodeBadge: {
+    backgroundColor: '#1f2937',
+    border: '1px solid #374151',
+    borderRadius: '6px',
+    padding: '5px 10px',
+    color: '#9ca3af',
+    fontSize: '13px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  errorText: {
+    color: '#f87171',
+    fontSize: '14px',
+    marginTop: '8px',
+    textAlign: 'center' as const,
+  },
+  waitingText: {
+    color: '#6b7280',
+    fontSize: '14px',
+    textAlign: 'center' as const,
+    marginTop: '8px',
+  },
 };
 
 const getPlayerBtnStyle = (active: boolean) => ({
@@ -266,31 +359,28 @@ const getPlayerBtnStyle = (active: boolean) => ({
   border: 'none',
   backgroundColor: active ? '#2563eb' : '#374151',
   color: active ? '#fff' : '#d1d5db',
-  fontSize: '16px'
+  fontSize: '16px',
 });
 
 const getGridStyle = (numPlayers: number, width: number) => {
   if (width < 768) {
-    // Mobile: single column
-    return {
-      display: 'grid',
-      gap: '16px',
-      gridTemplateColumns: '1fr'
-    };
+    return { display: 'grid', gap: '16px', gridTemplateColumns: '1fr' };
   } else if (width < 1024) {
-    // Tablet: max 2 columns
     return {
       display: 'grid',
       gap: '16px',
-      gridTemplateColumns: numPlayers >= 2 ? 'repeat(2, 1fr)' : '1fr'
+      gridTemplateColumns: numPlayers >= 2 ? 'repeat(2, 1fr)' : '1fr',
     };
   }
-  
-  // Desktop
   return {
     display: 'grid',
     gap: '16px',
-    gridTemplateColumns: numPlayers === 2 ? 'repeat(2, 1fr)' : numPlayers === 3 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)'
+    gridTemplateColumns:
+      numPlayers === 2
+        ? 'repeat(2, 1fr)'
+        : numPlayers === 3
+        ? 'repeat(3, 1fr)'
+        : 'repeat(2, 1fr)',
   };
 };
 
@@ -298,7 +388,7 @@ const getPlayerCardStyle = (idx: number) => ({
   backgroundColor: PLAYER_COLORS[idx].bg,
   borderRadius: '8px',
   padding: '16px',
-  border: `2px solid ${PLAYER_COLORS[idx].border}`
+  border: `2px solid ${PLAYER_COLORS[idx].border}`,
 });
 
 const getIconBtnStyle = (color: string) => ({
@@ -309,7 +399,7 @@ const getIconBtnStyle = (color: string) => ({
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'center'
+  justifyContent: 'center',
 });
 
 const getSmallIconBtnStyle = (color: string) => ({
@@ -320,8 +410,10 @@ const getSmallIconBtnStyle = (color: string) => ({
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'center'
+  justifyContent: 'center',
 });
+
+type SetupMode = 'home' | 'solo' | 'create' | 'join' | 'waiting';
 
 export default function MTGTracker() {
   const [gameStarted, setGameStarted] = useState(false);
@@ -331,24 +423,130 @@ export default function MTGTracker() {
   const [creatureForm, setCreatureForm] = useState({ name: '', power: '1', toughness: '1' });
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
-  React.useEffect(() => {
+  const [setupMode, setSetupMode] = useState<SetupMode>('home');
+  const [roomCode, setRoomCode] = useState('');
+  const [joinInput, setJoinInput] = useState('');
+  const [roomError, setRoomError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const socketRef = useRef<Socket | null>(null);
+  const isSoloRef = useRef(false);
+  // Use a ref so emitState always sees the current numPlayers without needing it
+  // in a dependency array
+  const numPlayersRef = useRef(numPlayers);
+
+  useEffect(() => {
+    numPlayersRef.current = numPlayers;
+  }, [numPlayers]);
+
+  useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      socketRef.current?.disconnect();
+    };
+  }, []);
+
+  const emitState = (updatedPlayers: Player[]) => {
+    if (!isSoloRef.current) {
+      socketRef.current?.emit('update-state', {
+        players: updatedPlayers,
+        numPlayers: numPlayersRef.current,
+      });
+    }
+  };
+
+  const initSocket = () => {
+    if (socketRef.current?.connected) return socketRef.current;
+    const socket = SERVER_URL ? io(SERVER_URL) : io();
+    socketRef.current = socket;
+    socket.on('state-updated', (state: GameState) => {
+      setPlayers(state.players);
+      setNumPlayers(state.numPlayers);
+      numPlayersRef.current = state.numPlayers;
+      setGameStarted(true);
+    });
+    return socket;
+  };
+
+  const handleCreateRoom = () => {
+    isSoloRef.current = false;
+    const socket = initSocket();
+    socket.emit('create-room', (res: { roomCode: string }) => {
+      setRoomCode(res.roomCode);
+      setSetupMode('create');
+    });
+  };
+
+  const handleJoinRoom = () => {
+    const code = joinInput.toUpperCase().trim();
+    if (!code) return;
+    setRoomError('');
+    isSoloRef.current = false;
+    const socket = initSocket();
+    socket.emit(
+      'join-room',
+      { roomCode: code },
+      (res: { gameState: GameState | null; error?: string }) => {
+        if (res.error) {
+          setRoomError(res.error);
+          return;
+        }
+        setRoomCode(code);
+        if (res.gameState) {
+          setPlayers(res.gameState.players);
+          setNumPlayers(res.gameState.numPlayers);
+          numPlayersRef.current = res.gameState.numPlayers;
+          setGameStarted(true);
+        } else {
+          setSetupMode('waiting');
+        }
+      }
+    );
+  };
+
   const startGame = () => {
-    setPlayers(Array.from({ length: numPlayers }, (_, i) => ({
+    const newPlayers = Array.from({ length: numPlayers }, (_, i) => ({
       id: i,
       name: `Player ${i + 1}`,
       life: 20,
-      creatures: []
-    })));
+      creatures: [],
+    }));
+    numPlayersRef.current = numPlayers;
+    setPlayers(newPlayers);
     setGameStarted(true);
+    if (!isSoloRef.current) {
+      socketRef.current?.emit('update-state', { players: newPlayers, numPlayers });
+    }
+  };
+
+  const newGame = () => {
+    setGameStarted(false);
+    setPlayers([]);
+    setRoomCode('');
+    setJoinInput('');
+    setRoomError('');
+    setSetupMode('home');
+    socketRef.current?.disconnect();
+    socketRef.current = null;
+    isSoloRef.current = false;
+  };
+
+  const copyRoomCode = () => {
+    navigator.clipboard.writeText(roomCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   const updateLife = (pid: number, delta: number) => {
-    setPlayers(prev => prev.map(p => p.id === pid ? { ...p, life: p.life + delta } : p));
+    const updated = players.map(p => (p.id === pid ? { ...p, life: p.life + delta } : p));
+    setPlayers(updated);
+    emitState(updated);
   };
 
   const startAddCreature = (pid: number) => {
@@ -358,71 +556,271 @@ export default function MTGTracker() {
 
   const submitCreature = () => {
     if (!creatureForm.name.trim()) return;
-    setPlayers(prev => prev.map(p =>
-      p.id === addingCreature ? {
-        ...p,
-        creatures: [...p.creatures, {
-          id: Date.now(),
-          name: creatureForm.name,
-          basePower: parseInt(creatureForm.power) || 1,
-          baseToughness: parseInt(creatureForm.toughness) || 1,
-          powerMod: 0,
-          toughnessMod: 0
-        }]
-      } : p
-    ));
+    const updated = players.map(p =>
+      p.id === addingCreature
+        ? {
+            ...p,
+            creatures: [
+              ...p.creatures,
+              {
+                id: Date.now(),
+                name: creatureForm.name,
+                basePower: parseInt(creatureForm.power) || 1,
+                baseToughness: parseInt(creatureForm.toughness) || 1,
+                powerMod: 0,
+                toughnessMod: 0,
+              },
+            ],
+          }
+        : p
+    );
+    setPlayers(updated);
     setAddingCreature(null);
+    emitState(updated);
   };
 
   const removeCreature = (pid: number, cid: number) => {
-    setPlayers(prev => prev.map(p =>
+    const updated = players.map(p =>
       p.id === pid ? { ...p, creatures: p.creatures.filter(c => c.id !== cid) } : p
-    ));
+    );
+    setPlayers(updated);
+    emitState(updated);
   };
 
-  const modifyCreature = (pid: number, cid: number, field: 'powerMod' | 'toughnessMod', delta: number) => {
-    setPlayers(prev => prev.map(p =>
-      p.id === pid ? {
-        ...p,
-        creatures: p.creatures.map(c =>
-          c.id === cid ? { ...c, [field]: c[field] + delta } : c
-        )
-      } : p
-    ));
+  const modifyCreature = (
+    pid: number,
+    cid: number,
+    field: 'powerMod' | 'toughnessMod',
+    delta: number
+  ) => {
+    const updated = players.map(p =>
+      p.id === pid
+        ? {
+            ...p,
+            creatures: p.creatures.map(c =>
+              c.id === cid ? { ...c, [field]: c[field] + delta } : c
+            ),
+          }
+        : p
+    );
+    setPlayers(updated);
+    emitState(updated);
   };
+
+  const disconnectAndGoHome = () => {
+    socketRef.current?.disconnect();
+    socketRef.current = null;
+    setRoomCode('');
+    setJoinInput('');
+    setRoomError('');
+    setSetupMode('home');
+  };
+
+  // ── Setup screens ──────────────────────────────────────────────────────────
 
   if (!gameStarted) {
-    return (
-      <div style={styles.center}>
-        <div style={styles.card}>
-          <div style={styles.title}>
-            <div style={styles.iconContainer}>
-              <Users size={48} color="#60a5fa" />
+    // Home: choose mode
+    if (setupMode === 'home') {
+      return (
+        <div style={styles.center}>
+          <div style={styles.card}>
+            <div style={styles.title}>
+              <div style={styles.iconContainer}>
+                <Users size={48} color="#60a5fa" />
+              </div>
+              <h1 style={styles.titleText}>MTG Tracker</h1>
             </div>
-            <h1 style={styles.titleText}>MTG Tracker</h1>
+            <button
+              onClick={() => { isSoloRef.current = true; setSetupMode('solo'); }}
+              style={{ ...styles.homeBtn, backgroundColor: '#2563eb', color: '#fff' }}
+            >
+              Play Solo
+            </button>
+            <button
+              onClick={handleCreateRoom}
+              style={{ ...styles.homeBtn, backgroundColor: '#16a34a', color: '#fff' }}
+            >
+              Create Room
+            </button>
+            <button
+              onClick={() => setSetupMode('join')}
+              style={{ ...styles.homeBtn, backgroundColor: '#7c3aed', color: '#fff', marginBottom: 0 }}
+            >
+              Join Room
+            </button>
           </div>
-          <div style={{ marginBottom: '24px' }}>
-            <label style={styles.label}>Number of Players</label>
-            <div style={styles.playerBtns}>
-              {[2, 3, 4].map(n => (
-                <button key={n} onClick={() => setNumPlayers(n)} style={getPlayerBtnStyle(numPlayers === n)}>
-                  {n}
-                </button>
-              ))}
-            </div>
-          </div>
-          <button onClick={startGame} style={styles.startBtn}>Start Game</button>
         </div>
-      </div>
-    );
+      );
+    }
+
+    // Solo: pick player count and start
+    if (setupMode === 'solo') {
+      return (
+        <div style={styles.center}>
+          <div style={styles.card}>
+            <div style={styles.title}>
+              <div style={styles.iconContainer}>
+                <Users size={48} color="#60a5fa" />
+              </div>
+              <h1 style={styles.titleText}>MTG Tracker</h1>
+            </div>
+            <div style={{ marginBottom: '24px' }}>
+              <label style={styles.label}>Number of Players</label>
+              <div style={styles.playerBtns}>
+                {[2, 3, 4].map(n => (
+                  <button key={n} onClick={() => setNumPlayers(n)} style={getPlayerBtnStyle(numPlayers === n)}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button onClick={startGame} style={styles.startBtn}>Start Game</button>
+            <button onClick={() => setSetupMode('home')} style={styles.backBtn}>Back</button>
+          </div>
+        </div>
+      );
+    }
+
+    // Create room: show room code + pick player count
+    if (setupMode === 'create') {
+      return (
+        <div style={styles.center}>
+          <div style={styles.card}>
+            <div style={styles.title}>
+              <h1 style={styles.titleText}>Create Room</h1>
+            </div>
+            <div style={styles.roomCodeBox}>
+              <div style={styles.roomCodeLabel}>Room Code</div>
+              <div style={styles.roomCodeText}>
+                {roomCode}
+                <button onClick={copyRoomCode} style={styles.copyBtn}>
+                  {copied
+                    ? <Check size={20} color="#22c55e" />
+                    : <Copy size={20} color="#60a5fa" />}
+                </button>
+              </div>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '6px' }}>
+                Share this code with other players
+              </div>
+            </div>
+            <div style={{ marginBottom: '8px' }}>
+              <label style={styles.label}>Number of Players</label>
+              <div style={styles.playerBtns}>
+                {[2, 3, 4].map(n => (
+                  <button key={n} onClick={() => setNumPlayers(n)} style={getPlayerBtnStyle(numPlayers === n)}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button onClick={startGame} style={styles.startBtn}>Start Game</button>
+            <button onClick={disconnectAndGoHome} style={styles.backBtn}>Back</button>
+          </div>
+        </div>
+      );
+    }
+
+    // Join room: enter code
+    if (setupMode === 'join') {
+      return (
+        <div style={styles.center}>
+          <div style={styles.card}>
+            <div style={styles.title}>
+              <h1 style={styles.titleText}>Join Room</h1>
+            </div>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={styles.label}>Room Code</label>
+              <input
+                style={{
+                  ...styles.input,
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.15em',
+                  fontSize: '22px',
+                  textAlign: 'center',
+                }}
+                type="text"
+                placeholder="XXXXXX"
+                maxLength={6}
+                value={joinInput}
+                onChange={e => {
+                  setJoinInput(e.target.value.toUpperCase());
+                  setRoomError('');
+                }}
+                onKeyDown={e => e.key === 'Enter' && handleJoinRoom()}
+                autoFocus
+              />
+              {roomError && <div style={styles.errorText}>{roomError}</div>}
+            </div>
+            <button
+              onClick={handleJoinRoom}
+              style={{ ...styles.startBtn, backgroundColor: '#7c3aed', marginTop: 0 }}
+            >
+              Join Room
+            </button>
+            <button
+              onClick={() => {
+                setJoinInput('');
+                setRoomError('');
+                socketRef.current?.disconnect();
+                socketRef.current = null;
+                setSetupMode('home');
+              }}
+              style={styles.backBtn}
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Waiting: joiner waiting for host to start
+    if (setupMode === 'waiting') {
+      return (
+        <div style={styles.center}>
+          <div style={styles.card}>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <Users size={48} color="#60a5fa" />
+              </div>
+              <h2 style={{ ...styles.titleText, fontSize: '22px', marginBottom: '20px' }}>
+                Waiting for Host
+              </h2>
+              <div style={styles.roomCodeBox}>
+                <div style={styles.roomCodeLabel}>Room Code</div>
+                <div style={{ ...styles.roomCodeText, justifyContent: 'center' }}>{roomCode}</div>
+              </div>
+              <p style={styles.waitingText}>The host hasn't started the game yet…</p>
+              <button onClick={disconnectAndGoHome} style={{ ...styles.backBtn, marginTop: '16px' }}>
+                Leave Room
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
   }
+
+  // ── Game screen ────────────────────────────────────────────────────────────
 
   return (
     <div style={styles.app}>
       <div style={styles.gridContainer}>
         <div style={styles.header}>
           <h1 style={styles.headerTitle}>MTG Game Tracker</h1>
-          <button onClick={() => setGameStarted(false)} style={styles.newGameBtn}>New Game</button>
+          <div style={styles.headerActions}>
+            {roomCode && (
+              <div style={styles.roomCodeBadge}>
+                <span>
+                  Room: <strong style={{ color: '#60a5fa' }}>{roomCode}</strong>
+                </span>
+                <button onClick={copyRoomCode} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex' }}>
+                  {copied ? <Check size={14} color="#22c55e" /> : <Copy size={14} color="#6b7280" />}
+                </button>
+              </div>
+            )}
+            <button onClick={newGame} style={styles.newGameBtn}>New Game</button>
+          </div>
         </div>
 
         <div style={getGridStyle(numPlayers, windowWidth)}>
@@ -491,7 +889,10 @@ export default function MTGTracker() {
                     <div key={creature.id} style={styles.creatureCard}>
                       <div style={styles.creatureHeader}>
                         <p style={styles.creatureName}>{creature.name}</p>
-                        <button onClick={() => removeCreature(player.id, creature.id)} style={styles.removeBtn}>
+                        <button
+                          onClick={() => removeCreature(player.id, creature.id)}
+                          style={styles.removeBtn}
+                        >
                           <X size={16} color="#f87171" />
                         </button>
                       </div>
@@ -499,11 +900,17 @@ export default function MTGTracker() {
                         <div style={styles.stat}>
                           <div style={styles.statLabel}>Power</div>
                           <div style={styles.statControl}>
-                            <button onClick={() => modifyCreature(player.id, creature.id, 'powerMod', -1)} style={getSmallIconBtnStyle('#374151')}>
+                            <button
+                              onClick={() => modifyCreature(player.id, creature.id, 'powerMod', -1)}
+                              style={getSmallIconBtnStyle('#374151')}
+                            >
                               <Minus size={12} color="#fff" />
                             </button>
                             <span style={styles.statNum}>{pw}</span>
-                            <button onClick={() => modifyCreature(player.id, creature.id, 'powerMod', 1)} style={getSmallIconBtnStyle('#374151')}>
+                            <button
+                              onClick={() => modifyCreature(player.id, creature.id, 'powerMod', 1)}
+                              style={getSmallIconBtnStyle('#374151')}
+                            >
                               <Plus size={12} color="#fff" />
                             </button>
                           </div>
@@ -511,11 +918,17 @@ export default function MTGTracker() {
                         <div style={styles.stat}>
                           <div style={styles.statLabel}>Toughness</div>
                           <div style={styles.statControl}>
-                            <button onClick={() => modifyCreature(player.id, creature.id, 'toughnessMod', -1)} style={getSmallIconBtnStyle('#374151')}>
+                            <button
+                              onClick={() => modifyCreature(player.id, creature.id, 'toughnessMod', -1)}
+                              style={getSmallIconBtnStyle('#374151')}
+                            >
                               <Minus size={12} color="#fff" />
                             </button>
                             <span style={styles.statNum}>{tg}</span>
-                            <button onClick={() => modifyCreature(player.id, creature.id, 'toughnessMod', 1)} style={getSmallIconBtnStyle('#374151')}>
+                            <button
+                              onClick={() => modifyCreature(player.id, creature.id, 'toughnessMod', 1)}
+                              style={getSmallIconBtnStyle('#374151')}
+                            >
                               <Plus size={12} color="#fff" />
                             </button>
                           </div>
