@@ -12,7 +12,7 @@ const io = new Server(server, {
   },
 });
 
-const MAX_ROOMS = 10;
+const MAX_ROOMS = 1000;
 
 // roomCode -> { gameState: null | { players, numPlayers } }
 const rooms = new Map();
