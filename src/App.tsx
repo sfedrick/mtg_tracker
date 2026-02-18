@@ -269,11 +269,30 @@ const getPlayerBtnStyle = (active: boolean) => ({
   fontSize: '16px'
 });
 
-const getGridStyle = (numPlayers: number) => ({
-  display: 'grid',
-  gap: '16px',
-  gridTemplateColumns: numPlayers === 2 ? 'repeat(2, 1fr)' : numPlayers === 3 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)'
-});
+const getGridStyle = (numPlayers: number, width: number) => {
+  if (width < 768) {
+    // Mobile: single column
+    return {
+      display: 'grid',
+      gap: '16px',
+      gridTemplateColumns: '1fr'
+    };
+  } else if (width < 1024) {
+    // Tablet: max 2 columns
+    return {
+      display: 'grid',
+      gap: '16px',
+      gridTemplateColumns: numPlayers >= 2 ? 'repeat(2, 1fr)' : '1fr'
+    };
+  }
+  
+  // Desktop
+  return {
+    display: 'grid',
+    gap: '16px',
+    gridTemplateColumns: numPlayers === 2 ? 'repeat(2, 1fr)' : numPlayers === 3 ? 'repeat(3, 1fr)' : 'repeat(2, 1fr)'
+  };
+};
 
 const getPlayerCardStyle = (idx: number) => ({
   backgroundColor: PLAYER_COLORS[idx].bg,
@@ -282,7 +301,7 @@ const getPlayerCardStyle = (idx: number) => ({
   border: `2px solid ${PLAYER_COLORS[idx].border}`
 });
 
-const getIconBtnStyle = (color : string) => ({
+const getIconBtnStyle = (color: string) => ({
   backgroundColor: color,
   border: 'none',
   borderRadius: '6px',
@@ -310,6 +329,13 @@ export default function MTGTracker() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [addingCreature, setAddingCreature] = useState<number | null>(null);
   const [creatureForm, setCreatureForm] = useState({ name: '', power: '1', toughness: '1' });
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
+  React.useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const startGame = () => {
     setPlayers(Array.from({ length: numPlayers }, (_, i) => ({
@@ -399,7 +425,7 @@ export default function MTGTracker() {
           <button onClick={() => setGameStarted(false)} style={styles.newGameBtn}>New Game</button>
         </div>
 
-        <div style={getGridStyle(numPlayers)}>
+        <div style={getGridStyle(numPlayers, windowWidth)}>
           {players.map((player, idx) => (
             <div key={player.id} style={getPlayerCardStyle(idx)}>
               <p style={styles.playerName}>{player.name}</p>
