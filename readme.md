@@ -1,0 +1,1 @@
+This is a magic the gathering react app made so you can track your life and the creatures your opponent has when playing magic with physical cards. If you're tired off putting a hundred counters on a creature by hand and just want to keep track of it use this app at https://mtg-tracker-4hkd.onrender.com.
