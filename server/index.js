@@ -12,6 +12,8 @@ const io = new Server(server, {
   },
 });
 
+const MAX_ROOMS = 10;
+
 // roomCode -> { gameState: null | { players, numPlayers } }
 const rooms = new Map();
 
@@ -30,6 +32,11 @@ function generateRoomCode() {
 
 io.on('connection', (socket) => {
   socket.on('create-room', (callback) => {
+    if (rooms.size >= MAX_ROOMS) {
+      const oldestCode = rooms.keys().next().value;
+      rooms.delete(oldestCode);
+      console.log(`Room ${oldestCode} evicted (FIFO, limit=${MAX_ROOMS})`);
+    }
     const code = generateRoomCode();
     rooms.set(code, { gameState: null });
     socket.join(code);
@@ -65,8 +72,8 @@ io.on('connection', (socket) => {
     if (code && rooms.has(code)) {
       const roomSockets = io.sockets.adapter.rooms.get(code);
       if (!roomSockets || roomSockets.size === 0) {
-        rooms.delete(code);
-        console.log(`Room ${code} removed (empty)`);
+        console.log(`Room ${code} is now empty (state preserved)`);
+        // Room intentionally kept — users may rejoin
       }
     }
   });
