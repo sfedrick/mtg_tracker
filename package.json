@@ -5,15 +5,18 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "cd server && npm install && node index.js",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server/index.js"
   },
   "dependencies": {
     "@tailwindcss/cli": "^4.1.18",
     "lucide-react": "^0.564.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "serve": "^14.2.5"
+    "serve": "^14.2.5",
+    "socket.io-client": "^4.7.2"
   },
   "devDependencies": {
     "@types/react": "^18.0.27",
