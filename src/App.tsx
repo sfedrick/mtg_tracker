@@ -451,6 +451,32 @@ export default function MTGTracker() {
     };
   }, []);
 
+  useEffect(() => {
+    const savedCode = sessionStorage.getItem('mtg_room_code');
+    if (!savedCode) return;
+    isSoloRef.current = false;
+    const socket = initSocket();
+    socket.emit(
+      'join-room',
+      { roomCode: savedCode },
+      (res: { gameState: GameState | null; error?: string }) => {
+        if (res.error) {
+          sessionStorage.removeItem('mtg_room_code');
+          return;
+        }
+        setRoomCode(savedCode);
+        if (res.gameState) {
+          setPlayers(res.gameState.players);
+          setNumPlayers(res.gameState.numPlayers);
+          numPlayersRef.current = res.gameState.numPlayers;
+          setGameStarted(true);
+        } else {
+          setSetupMode('waiting');
+        }
+      }
+    );
+  }, []);
+
   const emitState = (updatedPlayers: Player[]) => {
     if (!isSoloRef.current) {
       socketRef.current?.emit('update-state', {
@@ -497,6 +523,7 @@ export default function MTGTracker() {
           return;
         }
         setRoomCode(code);
+        sessionStorage.setItem('mtg_room_code', code);
         if (res.gameState) {
           setPlayers(res.gameState.players);
           setNumPlayers(res.gameState.numPlayers);
@@ -520,6 +547,7 @@ export default function MTGTracker() {
     setPlayers(newPlayers);
     setGameStarted(true);
     if (!isSoloRef.current) {
+      sessionStorage.setItem('mtg_room_code', roomCode);
       socketRef.current?.emit('update-state', { players: newPlayers, numPlayers });
     }
   };
@@ -534,6 +562,7 @@ export default function MTGTracker() {
     socketRef.current?.disconnect();
     socketRef.current = null;
     isSoloRef.current = false;
+    sessionStorage.removeItem('mtg_room_code');
   };
 
   const copyRoomCode = () => {
