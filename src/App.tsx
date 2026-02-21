@@ -2,6 +2,12 @@ import { useState, useRef, useEffect } from 'react';
 import { Plus, Minus, X, Users, Copy, Check } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 
+interface Modifier {
+  id: number;
+  name: string;
+  color: string;
+}
+
 interface Creature {
   id: number;
   name: string;
@@ -9,6 +15,7 @@ interface Creature {
   baseToughness: number;
   powerMod: number;
   toughnessMod: number;
+  modifiers: Modifier[];
 }
 
 interface Player {
@@ -348,6 +355,28 @@ const styles = {
     textAlign: 'center' as const,
     marginTop: '8px',
   },
+  modifierBadgeRow: { display: 'flex', flexWrap: 'wrap' as const, gap: '4px', marginTop: '8px' },
+  modifierBadge: {
+    display: 'inline-flex', alignItems: 'center', gap: '4px',
+    borderRadius: '9999px', padding: '2px 8px 2px 6px',
+    fontSize: '11px', fontWeight: '600' as const, color: '#fff',
+  },
+  modifierFormBox: {
+    backgroundColor: '#374151', borderRadius: '6px', padding: '10px',
+    border: '2px solid #8b5cf6',
+    display: 'flex', flexDirection: 'column' as const, gap: '8px', marginTop: '8px',
+  },
+  addModifierBtn: {
+    background: 'none', border: '1px dashed #4b5563', borderRadius: '4px',
+    color: '#9ca3af', fontSize: '11px', cursor: 'pointer',
+    padding: '3px 8px', marginTop: '6px', width: '100%',
+  },
+  modifierRemoveBtn: {
+    background: 'none', border: 'none', cursor: 'pointer',
+    padding: '0', display: 'flex', alignItems: 'center',
+  },
+  colorSwatchRow: { display: 'flex', alignItems: 'center', gap: '6px' },
+  colorSwatchLabel: { fontSize: '11px', color: '#9ca3af' },
 };
 
 const getPlayerBtnStyle = (active: boolean) => ({
@@ -402,6 +431,12 @@ const getIconBtnStyle = (color: string) => ({
   justifyContent: 'center',
 });
 
+const getCreatureBackground = (modifiers: Modifier[]): string => {
+  if (modifiers.length === 0) return '#1f2937';
+  if (modifiers.length === 1) return modifiers[0].color;
+  return `linear-gradient(135deg, ${modifiers.map(m => m.color).join(', ')})`;
+};
+
 const getSmallIconBtnStyle = (color: string) => ({
   backgroundColor: color,
   border: 'none',
@@ -421,6 +456,8 @@ export default function MTGTracker() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [addingCreature, setAddingCreature] = useState<number | null>(null);
   const [creatureForm, setCreatureForm] = useState({ name: '', power: '1', toughness: '1' });
+  const [addingModifier, setAddingModifier] = useState<{ pid: number; cid: number } | null>(null);
+  const [modifierForm, setModifierForm] = useState({ name: '', color: '#8b5cf6' });
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
 
   const [setupMode, setSetupMode] = useState<SetupMode>('home');
@@ -579,6 +616,7 @@ export default function MTGTracker() {
   };
 
   const startAddCreature = (pid: number) => {
+    setAddingModifier(null);
     setAddingCreature(pid);
     setCreatureForm({ name: '', power: '1', toughness: '1' });
   };
@@ -598,6 +636,7 @@ export default function MTGTracker() {
                 baseToughness: parseInt(creatureForm.toughness) || 1,
                 powerMod: 0,
                 toughnessMod: 0,
+                modifiers: [],
               },
             ],
           }
@@ -630,6 +669,43 @@ export default function MTGTracker() {
               c.id === cid ? { ...c, [field]: c[field] + delta } : c
             ),
           }
+        : p
+    );
+    setPlayers(updated);
+    emitState(updated);
+  };
+
+  const startAddModifier = (pid: number, cid: number) => {
+    setAddingCreature(null);
+    setAddingModifier({ pid, cid });
+    setModifierForm({ name: '', color: '#8b5cf6' });
+  };
+
+  const submitModifier = () => {
+    if (!modifierForm.name.trim() || !addingModifier) return;
+    const { pid, cid } = addingModifier;
+    const updated = players.map(p =>
+      p.id === pid
+        ? { ...p, creatures: p.creatures.map(c =>
+            c.id === cid
+              ? { ...c, modifiers: [...c.modifiers, { id: Date.now(), name: modifierForm.name.trim(), color: modifierForm.color }] }
+              : c
+          )}
+        : p
+    );
+    setPlayers(updated);
+    setAddingModifier(null);
+    emitState(updated);
+  };
+
+  const removeModifier = (pid: number, cid: number, mid: number) => {
+    const updated = players.map(p =>
+      p.id === pid
+        ? { ...p, creatures: p.creatures.map(c =>
+            c.id === cid
+              ? { ...c, modifiers: c.modifiers.filter(m => m.id !== mid) }
+              : c
+          )}
         : p
     );
     setPlayers(updated);
@@ -915,7 +991,7 @@ export default function MTGTracker() {
                   const pw = creature.basePower + creature.powerMod;
                   const tg = creature.baseToughness + creature.toughnessMod;
                   return (
-                    <div key={creature.id} style={styles.creatureCard}>
+                    <div key={creature.id} style={{ ...styles.creatureCard, background: getCreatureBackground(creature.modifiers) }}>
                       <div style={styles.creatureHeader}>
                         <p style={styles.creatureName}>{creature.name}</p>
                         <button
@@ -925,6 +1001,23 @@ export default function MTGTracker() {
                           <X size={16} color="#f87171" />
                         </button>
                       </div>
+
+                      {creature.modifiers.length > 0 && (
+                        <div style={styles.modifierBadgeRow}>
+                          {creature.modifiers.map(mod => (
+                            <span key={mod.id} style={{ ...styles.modifierBadge, backgroundColor: mod.color }}>
+                              {mod.name}
+                              <button
+                                onClick={() => removeModifier(player.id, creature.id, mod.id)}
+                                style={styles.modifierRemoveBtn}
+                              >
+                                <X size={10} color="#fff" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
                       <div style={styles.statRow}>
                         <div style={styles.stat}>
                           <div style={styles.statLabel}>Power</div>
@@ -963,6 +1056,39 @@ export default function MTGTracker() {
                           </div>
                         </div>
                       </div>
+
+                      <button
+                        onClick={() => startAddModifier(player.id, creature.id)}
+                        style={styles.addModifierBtn}
+                      >
+                        + Add modifier
+                      </button>
+
+                      {addingModifier?.pid === player.id && addingModifier?.cid === creature.id && (
+                        <div style={styles.modifierFormBox}>
+                          <input
+                            style={styles.input}
+                            type="text"
+                            placeholder="Modifier name (e.g. Enchanted)"
+                            value={modifierForm.name}
+                            onChange={e => setModifierForm(p => ({ ...p, name: e.target.value }))}
+                            onKeyDown={e => e.key === 'Enter' && submitModifier()}
+                            autoFocus
+                          />
+                          <div style={styles.colorSwatchRow}>
+                            <span style={styles.colorSwatchLabel}>Color:</span>
+                            <input
+                              type="color"
+                              value={modifierForm.color}
+                              onChange={e => setModifierForm(p => ({ ...p, color: e.target.value }))}
+                            />
+                          </div>
+                          <div style={styles.formBtns}>
+                            <button onClick={submitModifier} style={styles.addBtn}>Add</button>
+                            <button onClick={() => setAddingModifier(null)} style={styles.cancelBtn}>Cancel</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

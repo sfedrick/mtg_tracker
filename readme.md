@@ -23,7 +23,15 @@ npm run dev
 # Start the Socket.io room server (separate terminal)
 npm run dev:server
 ```
+### Running in production 
+```bash
+#Render runs this command to build your app before each deploy.
+npm install && npm run build && cd server && npm install 
 
+###Start Command
+npm start
+
+```
 By default the frontend expects the server at `http://localhost:3001`. Override this with a `VITE_SERVER_URL` environment variable (e.g. in `.env.local`) for production deployments.
 
 ## License
