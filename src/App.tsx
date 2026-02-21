@@ -16,6 +16,7 @@ interface Creature {
   powerMod: number;
   toughnessMod: number;
   modifiers: Modifier[];
+  textColor: string;
 }
 
 interface Player {
@@ -377,6 +378,11 @@ const styles = {
   },
   colorSwatchRow: { display: 'flex', alignItems: 'center', gap: '6px' },
   colorSwatchLabel: { fontSize: '11px', color: '#9ca3af' },
+  textColorInput: {
+    width: '20px', height: '20px', padding: '0', border: 'none',
+    borderRadius: '50%', cursor: 'pointer', backgroundColor: 'transparent',
+    flexShrink: 0 as const,
+  },
 };
 
 const getPlayerBtnStyle = (active: boolean) => ({
@@ -637,6 +643,7 @@ export default function MTGTracker() {
                 powerMod: 0,
                 toughnessMod: 0,
                 modifiers: [],
+                textColor: '#ffffff',
               },
             ],
           }
@@ -695,6 +702,18 @@ export default function MTGTracker() {
     );
     setPlayers(updated);
     setAddingModifier(null);
+    emitState(updated);
+  };
+
+  const setCreatureTextColor = (pid: number, cid: number, color: string) => {
+    const updated = players.map(p =>
+      p.id === pid
+        ? { ...p, creatures: p.creatures.map(c =>
+            c.id === cid ? { ...c, textColor: color } : c
+          )}
+        : p
+    );
+    setPlayers(updated);
     emitState(updated);
   };
 
@@ -993,13 +1012,22 @@ export default function MTGTracker() {
                   return (
                     <div key={creature.id} style={{ ...styles.creatureCard, background: getCreatureBackground(creature.modifiers) }}>
                       <div style={styles.creatureHeader}>
-                        <p style={styles.creatureName}>{creature.name}</p>
-                        <button
-                          onClick={() => removeCreature(player.id, creature.id)}
-                          style={styles.removeBtn}
-                        >
-                          <X size={16} color="#f87171" />
-                        </button>
+                        <p style={{ ...styles.creatureName, color: creature.textColor }}>{creature.name}</p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          <input
+                            type="color"
+                            value={creature.textColor}
+                            onChange={e => setCreatureTextColor(player.id, creature.id, e.target.value)}
+                            style={styles.textColorInput}
+                            title="Text color"
+                          />
+                          <button
+                            onClick={() => removeCreature(player.id, creature.id)}
+                            style={styles.removeBtn}
+                          >
+                            <X size={16} color="#f87171" />
+                          </button>
+                        </div>
                       </div>
 
                       {creature.modifiers.length > 0 && (
@@ -1028,7 +1056,7 @@ export default function MTGTracker() {
                             >
                               <Minus size={12} color="#fff" />
                             </button>
-                            <span style={styles.statNum}>{pw}</span>
+                            <span style={{ ...styles.statNum, color: creature.textColor }}>{pw}</span>
                             <button
                               onClick={() => modifyCreature(player.id, creature.id, 'powerMod', 1)}
                               style={getSmallIconBtnStyle('#374151')}
@@ -1046,7 +1074,7 @@ export default function MTGTracker() {
                             >
                               <Minus size={12} color="#fff" />
                             </button>
-                            <span style={styles.statNum}>{tg}</span>
+                            <span style={{ ...styles.statNum, color: creature.textColor }}>{tg}</span>
                             <button
                               onClick={() => modifyCreature(player.id, creature.id, 'toughnessMod', 1)}
                               style={getSmallIconBtnStyle('#374151')}
