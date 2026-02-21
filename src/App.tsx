@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, Minus, X, Users, Copy, Check } from 'lucide-react';
+import { Plus, Minus, X, Users, Copy, Check, Pencil } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 
 interface Modifier {
@@ -24,6 +24,8 @@ interface Player {
   name: string;
   life: number;
   creatures: Creature[];
+  colorBg: string;
+  colorBorder: string;
 }
 
 interface GameState {
@@ -83,10 +85,6 @@ const styles = {
     marginBottom: '8px',
     fontWeight: '600',
     display: 'block',
-  },
-  playerBtns: {
-    display: 'flex',
-    gap: '8px',
   },
   startBtn: {
     width: '100%',
@@ -385,17 +383,6 @@ const styles = {
   },
 };
 
-const getPlayerBtnStyle = (active: boolean) => ({
-  flex: 1,
-  padding: '12px',
-  borderRadius: '6px',
-  fontWeight: 'bold',
-  cursor: 'pointer',
-  border: 'none',
-  backgroundColor: active ? '#2563eb' : '#374151',
-  color: active ? '#fff' : '#d1d5db',
-  fontSize: '16px',
-});
 
 const getGridStyle = (numPlayers: number, width: number) => {
   if (width < 768) {
@@ -407,23 +394,20 @@ const getGridStyle = (numPlayers: number, width: number) => {
       gridTemplateColumns: numPlayers >= 2 ? 'repeat(2, 1fr)' : '1fr',
     };
   }
+  // Desktop: up to 3 columns, wrapping naturally for any count
+  const cols = numPlayers <= 2 ? numPlayers : numPlayers === 3 ? 3 : numPlayers <= 6 ? 3 : 4;
   return {
     display: 'grid',
     gap: '16px',
-    gridTemplateColumns:
-      numPlayers === 2
-        ? 'repeat(2, 1fr)'
-        : numPlayers === 3
-        ? 'repeat(3, 1fr)'
-        : 'repeat(2, 1fr)',
+    gridTemplateColumns: `repeat(${cols}, 1fr)`,
   };
 };
 
-const getPlayerCardStyle = (idx: number) => ({
-  backgroundColor: PLAYER_COLORS[idx].bg,
+const getPlayerCardStyle = (player: Player) => ({
+  backgroundColor: player.colorBg,
   borderRadius: '8px',
   padding: '16px',
-  border: `2px solid ${PLAYER_COLORS[idx].border}`,
+  border: `2px solid ${player.colorBorder}`,
 });
 
 const getIconBtnStyle = (color: string) => ({
@@ -460,6 +444,8 @@ export default function MTGTracker() {
   const [gameStarted, setGameStarted] = useState(false);
   const [numPlayers, setNumPlayers] = useState(2);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [editingPlayer, setEditingPlayer] = useState<number | null>(null);
+  const [playerNameInput, setPlayerNameInput] = useState('');
   const [addingCreature, setAddingCreature] = useState<number | null>(null);
   const [creatureForm, setCreatureForm] = useState({ name: '', power: '1', toughness: '1' });
   const [addingModifier, setAddingModifier] = useState<{ pid: number; cid: number } | null>(null);
@@ -471,6 +457,9 @@ export default function MTGTracker() {
   const [joinInput, setJoinInput] = useState('');
   const [roomError, setRoomError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [numPlayersInput, setNumPlayersInput] = useState('2');
+  const [startingLifeInput, setStartingLifeInput] = useState('20');
+  const [setupError, setSetupError] = useState('');
 
   const socketRef = useRef<Socket | null>(null);
   const isSoloRef = useRef(false);
@@ -579,20 +568,35 @@ export default function MTGTracker() {
     );
   };
 
-  const startGame = () => {
-    const newPlayers = Array.from({ length: numPlayers }, (_, i) => ({
+  const startGame = (n: number, startLife: number) => {
+    const newPlayers = Array.from({ length: n }, (_, i) => ({
       id: i,
       name: `Player ${i + 1}`,
-      life: 20,
+      life: startLife,
       creatures: [],
+      colorBg: PLAYER_COLORS[i % PLAYER_COLORS.length].bg,
+      colorBorder: PLAYER_COLORS[i % PLAYER_COLORS.length].border,
     }));
-    numPlayersRef.current = numPlayers;
+    numPlayersRef.current = n;
+    setNumPlayers(n);
     setPlayers(newPlayers);
     setGameStarted(true);
     if (!isSoloRef.current) {
       sessionStorage.setItem('mtg_room_code', roomCode);
-      socketRef.current?.emit('update-state', { players: newPlayers, numPlayers });
+      socketRef.current?.emit('update-state', { players: newPlayers, numPlayers: n });
     }
+  };
+
+  const handleStartGame = () => {
+    const n = parseInt(numPlayersInput, 10);
+    if (!numPlayersInput.trim() || isNaN(n) || n <= 0 || !Number.isInteger(n)) {
+      setSetupError('A positive number of players is required.');
+      return;
+    }
+    const life = parseInt(startingLifeInput, 10);
+    const startLife = (!startingLifeInput.trim() || isNaN(life) || life < 0) ? 20 : life;
+    setSetupError('');
+    startGame(n, startLife);
   };
 
   const newGame = () => {
@@ -617,6 +621,18 @@ export default function MTGTracker() {
 
   const updateLife = (pid: number, delta: number) => {
     const updated = players.map(p => (p.id === pid ? { ...p, life: p.life + delta } : p));
+    setPlayers(updated);
+    emitState(updated);
+  };
+
+  const updatePlayerName = (pid: number, name: string) => {
+    const updated = players.map(p => (p.id === pid ? { ...p, name } : p));
+    setPlayers(updated);
+    emitState(updated);
+  };
+
+  const updatePlayerColor = (pid: number, field: 'colorBg' | 'colorBorder', value: string) => {
+    const updated = players.map(p => (p.id === pid ? { ...p, [field]: value } : p));
     setPlayers(updated);
     emitState(updated);
   };
@@ -788,18 +804,31 @@ export default function MTGTracker() {
               </div>
               <h1 style={styles.titleText}>MTG Tracker</h1>
             </div>
-            <div style={{ marginBottom: '24px' }}>
+            <div style={{ marginBottom: '16px' }}>
               <label style={styles.label}>Number of Players</label>
-              <div style={styles.playerBtns}>
-                {[2, 3, 4].map(n => (
-                  <button key={n} onClick={() => setNumPlayers(n)} style={getPlayerBtnStyle(numPlayers === n)}>
-                    {n}
-                  </button>
-                ))}
-              </div>
+              <input
+                style={styles.input}
+                type="number"
+                min="1"
+                value={numPlayersInput}
+                onChange={e => { setNumPlayersInput(e.target.value); setSetupError(''); }}
+                placeholder="Enter number of players"
+              />
             </div>
-            <button onClick={startGame} style={styles.startBtn}>Start Game</button>
-            <button onClick={() => setSetupMode('home')} style={styles.backBtn}>Back</button>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={styles.label}>Starting Life Total</label>
+              <input
+                style={styles.input}
+                type="number"
+                min="0"
+                value={startingLifeInput}
+                onChange={e => setStartingLifeInput(e.target.value)}
+                placeholder="20"
+              />
+            </div>
+            {setupError && <div style={styles.errorText}>{setupError}</div>}
+            <button onClick={handleStartGame} style={styles.startBtn}>Start Game</button>
+            <button onClick={() => { setSetupError(''); setSetupMode('home'); }} style={styles.backBtn}>Back</button>
           </div>
         </div>
       );
@@ -827,18 +856,31 @@ export default function MTGTracker() {
                 Share this code with other players
               </div>
             </div>
-            <div style={{ marginBottom: '8px' }}>
+            <div style={{ marginBottom: '16px' }}>
               <label style={styles.label}>Number of Players</label>
-              <div style={styles.playerBtns}>
-                {[2, 3, 4].map(n => (
-                  <button key={n} onClick={() => setNumPlayers(n)} style={getPlayerBtnStyle(numPlayers === n)}>
-                    {n}
-                  </button>
-                ))}
-              </div>
+              <input
+                style={styles.input}
+                type="number"
+                min="1"
+                value={numPlayersInput}
+                onChange={e => { setNumPlayersInput(e.target.value); setSetupError(''); }}
+                placeholder="Enter number of players"
+              />
             </div>
-            <button onClick={startGame} style={styles.startBtn}>Start Game</button>
-            <button onClick={disconnectAndGoHome} style={styles.backBtn}>Back</button>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={styles.label}>Starting Life Total</label>
+              <input
+                style={styles.input}
+                type="number"
+                min="0"
+                value={startingLifeInput}
+                onChange={e => setStartingLifeInput(e.target.value)}
+                placeholder="20"
+              />
+            </div>
+            {setupError && <div style={styles.errorText}>{setupError}</div>}
+            <button onClick={handleStartGame} style={styles.startBtn}>Start Game</button>
+            <button onClick={() => { setSetupError(''); disconnectAndGoHome(); }} style={styles.backBtn}>Back</button>
           </div>
         </div>
       );
@@ -948,9 +990,77 @@ export default function MTGTracker() {
         </div>
 
         <div style={getGridStyle(numPlayers, windowWidth)}>
-          {players.map((player, idx) => (
-            <div key={player.id} style={getPlayerCardStyle(idx)}>
-              <p style={styles.playerName}>{player.name}</p>
+          {players.map((player) => (
+            <div key={player.id} style={getPlayerCardStyle(player)}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                <p style={{ ...styles.playerName, marginBottom: 0 }}>{player.name}</p>
+                <button
+                  onClick={() => {
+                    if (editingPlayer === player.id) {
+                      setEditingPlayer(null);
+                    } else {
+                      setPlayerNameInput(player.name);
+                      setEditingPlayer(player.id);
+                    }
+                  }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+                  title="Edit player"
+                >
+                  <Pencil size={14} color="#9ca3af" />
+                </button>
+              </div>
+
+              {editingPlayer === player.id && (
+                <div style={{ backgroundColor: '#111827', borderRadius: '6px', padding: '10px', marginBottom: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <input
+                    style={styles.input}
+                    type="text"
+                    value={playerNameInput}
+                    onChange={e => setPlayerNameInput(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') {
+                        if (playerNameInput.trim()) updatePlayerName(player.id, playerNameInput.trim());
+                        setEditingPlayer(null);
+                      }
+                      if (e.key === 'Escape') setEditingPlayer(null);
+                    }}
+                    placeholder="Player name"
+                    autoFocus
+                  />
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <label style={{ fontSize: '11px', color: '#9ca3af', flex: 1 }}>
+                      Background
+                      <input
+                        type="color"
+                        value={player.colorBg}
+                        onChange={e => updatePlayerColor(player.id, 'colorBg', e.target.value)}
+                        style={{ display: 'block', marginTop: '4px', width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px', padding: '0' }}
+                      />
+                    </label>
+                    <label style={{ fontSize: '11px', color: '#9ca3af', flex: 1 }}>
+                      Border
+                      <input
+                        type="color"
+                        value={player.colorBorder}
+                        onChange={e => updatePlayerColor(player.id, 'colorBorder', e.target.value)}
+                        style={{ display: 'block', marginTop: '4px', width: '100%', height: '28px', cursor: 'pointer', border: 'none', borderRadius: '4px', padding: '0' }}
+                      />
+                    </label>
+                  </div>
+                  <div style={styles.formBtns}>
+                    <button
+                      onClick={() => {
+                        if (playerNameInput.trim()) updatePlayerName(player.id, playerNameInput.trim());
+                        setEditingPlayer(null);
+                      }}
+                      style={styles.addBtn}
+                    >
+                      Save
+                    </button>
+                    <button onClick={() => setEditingPlayer(null)} style={styles.cancelBtn}>Cancel</button>
+                  </div>
+                </div>
+              )}
 
               <div style={styles.lifeBox}>
                 <button onClick={() => updateLife(player.id, -1)} style={getIconBtnStyle('#dc2626')}>
